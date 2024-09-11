@@ -1,0 +1,71 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  mavenVersion: '3.8.6'
+  javaVersion: '11'
+
+steps:
+  - task: UseJavaVersion@1
+    inputs:
+      versionSpec: '$(javaVersion)'
+      jdkArchitectureOption: 'x64'
+
+  - task: Maven@3
+    inputs:
+      mavenPomFile: 'pom.xml'
+      mavenOptions: '-Xmx3072m'
+      javaHomeOption: 'JDKVersion'
+      jdkVersionOption: '1.11'
+      goals: 'clean package'
+
+  - task: Maven@3
+    inputs:
+      mavenPomFile: 'pom.xml'
+      goals: 'test'
+
+  - task: PublishTestResults@2
+    inputs:
+      testResultsFormat: 'JUnit'
+      testResultsFiles: '**/target/surefire-reports/TEST-*.xml'
+      failTaskOnFailedTests: true
+
+  - task: SonarQubePrepare@4
+    inputs:
+      SonarQube: 'SonarQube'
+      scannerMode: 'CLI'
+      configMode: 'manual'
+      cliProjectKey: 'SpringPetClinic'
+      cliSources: 'src'
+
+  - task: Maven@3
+    inputs:
+      mavenPomFile: 'pom.xml'
+      goals: 'sonar:sonar'
+      options: '-Dsonar.projectKey=SpringPetClinic'
+      sonarQubeEndpoint: 'SonarQube'
+
+  - script: |
+      mkdir owasp-dependency-check
+      cd owasp-dependency-check
+      wget https://github.com/jeremylong/DependencyCheck/releases/download/v6.5.0/dependency-check-6.5.0-release.zip
+      unzip dependency-check-6.5.0-release.zip
+      ./bin/dependency-check.sh --project SpringPetClinic --scan . --format ALL
+    displayName: 'OWASP Dependency Check'
+
+  - task: CopyFiles@2
+    inputs:
+      SourceFolder: '$(System.DefaultWorkingDirectory)'
+      TargetFolder: '$(Build.ArtifactStagingDirectory)'
+      Contents: '**/*'
+
+  - task: PublishBuildArtifacts@1
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+      ArtifactName: 'drop'
+      publishLocation: 'Container'
